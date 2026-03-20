@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+
+<!-- TOTAL COUNT -->
+<h3>Total Posts: {{ total }}</h3>
+
+<!-- POST BOX -->
+<div class="post-box">
+    <form method="POST">
+        <textarea name="content" placeholder="What's happening?" required></textarea>
+        <br>
+        <button type="submit">Post</button>
+    </form>
+</div>
+
+<!-- POSTS -->
+{% for post in posts %}
+<div class="post">
+    <p>{{ post.content }}</p>
+
+    <div class="meta">
+        {{ post.label }} | {{ post.timestamp }}
+    </div>
+
+    <a href="/delete/{{ post._id }}" class="delete">Delete</a>
+</div>
+{% endfor %}
+
+<!-- PAGINATION -->
+<div style="margin-top:20px; display:flex; gap:10px; align-items:center;">
+
+    {% if page > 1 %}
+        <a href="/?page={{ page - 1 }}">
+            <button>⬅ Previous</button>
+        </a>
+    {% endif %}
+
+    <span>Page {{ page }}</span>
+
+    {% if has_next %}
+        <a href="/?page={{ page + 1 }}">
+            <button>Next ➡</button>
+        </a>
+    {% endif %}
+
+</div>
+
+{% endblock %}

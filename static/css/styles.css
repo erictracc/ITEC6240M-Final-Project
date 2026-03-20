@@ -1,0 +1,101 @@
+/* GENERAL */
+body {
+    margin: 0;
+    font-family: Arial;
+    background: #f5f8fa;
+    display: flex;
+}
+
+/* SIDEBAR */
+.sidebar {
+    width: 200px;
+    background: white;
+    height: 100vh;
+    padding: 20px;
+    border-right: 1px solid #ddd;
+}
+
+.sidebar h2 {
+    color: #e31837;
+}
+
+.nav-item {
+    margin: 15px 0;
+}
+
+.nav-item a {
+    text-decoration: none;
+    color: black;
+}
+
+.post-btn {
+    margin-top: 20px;
+    background: #e31837;
+    color: white;
+    padding: 12px;
+    border-radius: 999px; /* fully rounded */
+    text-align: center;
+    font-weight: bold;
+    cursor: pointer;
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    transition: 0.2s;
+}
+
+.post-btn:hover {
+    background: #c4122f;
+}
+
+/* MAIN */
+.main {
+    flex: 1;
+    padding: 20px;
+    max-width: 600px;
+    margin: auto;
+}
+
+.post-box, .card {
+    background: white;
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+}
+
+/* INPUT */
+textarea {
+    width: 95%;
+    height: 80px;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+}
+
+/* BUTTON */
+button {
+    margin-top: 10px;
+    background: #e31837;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 20px;
+    cursor: pointer;
+}
+
+/* POSTS */
+.post {
+    background: white;
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 15px;
+}
+
+.meta {
+    font-size: 12px;
+    color: gray;
+}
+
+.delete {
+    color: red;
+    font-size: 12px;
+}
