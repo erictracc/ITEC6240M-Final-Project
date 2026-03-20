@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+
+<div class="card">
+    <h2>Settings</h2>
+    <p>Danger Zone ⚠️</p>
+
+    <form action="/delete_all" method="POST">
+        <button style="background:red;">Delete All Posts</button>
+    </form>
+
+
+    <h3>Batch Upload CSV</h3>
+
+    <form action="/upload_csv" method="POST" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".csv" required>
+        <br><br>
+        <button type="submit">Upload CSV</button>
+    </form>
+</div>
+
+{% endblock %}
