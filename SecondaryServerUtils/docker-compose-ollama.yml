@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+
+    ports:
+      - "11434:11434"  # Ollama API
+
+    volumes:
+      - ollama_data:/root/.ollama  # persists models
+
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+        reservations:
+          memory: 1g
+
+# IMPORTANT:
+# Make sure this port is open on your firewall (UFW), otherwise your app cannot reach Ollama:
+# sudo ufw allow 11434/tcp
+
+volumes:
+  ollama_data:
