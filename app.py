@@ -1,13 +1,50 @@
-from flask import Flask
-from pages.home import home
+from flask import Flask, render_template, request, redirect, Response
+from functools import wraps
+
 from db.mongo import get_db
 from utils.logger import setup_logger
-from pages.home import home, delete_post, delete_all_posts
-from flask import render_template
-import pandas as pd
-from flask import request, redirect
-from datetime import datetime
+from pages.home import compute_metrics
 
+# Import ALL handlers from home.py
+from pages.home import (
+    home,
+    delete_post,
+    delete_all_posts,
+    upload_csv,
+    reevaluate_post,
+    evaluate_batch_posts,
+    update_label
+)
+
+# -------- AUTH (MUST BE ABOVE ROUTES) --------
+USERNAME = "admin"
+PASSWORD = "adminadmin"
+
+def check_auth(username, password):
+    return username == USERNAME and password == PASSWORD
+
+def authenticate():
+    return Response(
+        "Login Required",
+        401,
+        {"WWW-Authenticate": 'Basic realm="Login Required"'}
+    )
+
+def requires_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        print("AUTH CHECK RUNNING")  # DEBUG
+
+        auth = request.authorization
+        if not auth or not check_auth(auth.username, auth.password):
+            print("AUTH FAILED")
+            return authenticate()
+
+        print("AUTH PASSED")
+        return f(*args, **kwargs)
+    return decorated
+
+# -------- APP INIT --------
 logger = setup_logger()
 
 app = Flask(__name__, template_folder="pages/templates")
@@ -15,29 +52,41 @@ app = Flask(__name__, template_folder="pages/templates")
 # Initialize DB
 db = get_db()
 
+# -------- ROUTES --------
+
+# HOME
 @app.route("/", methods=["GET", "POST"])
+@requires_auth
 def index():
     logger.info("GET / - Home page accessed")
     return home()
 
+# DELETE SINGLE
 @app.route("/delete/<post_id>")
+@requires_auth
 def delete(post_id):
-    logger.info("GET /delete/<post_id> - Delete post accessed")
+    logger.info(f"DELETE post {post_id}")
     return delete_post(post_id)
 
+# SETTINGS
 @app.route("/settings")
+@requires_auth
 def settings():
-    logger.info("GET /settings - Settings page accessed")
+    logger.info("GET /settings")
     return render_template("settings.html")
 
+# DELETE ALL
 @app.route("/delete_all", methods=["POST"])
+@requires_auth
 def delete_all():
-    logger.info("POST /delete_all - Delete all posts accessed")
+    logger.info("POST /delete_all")
     return delete_all_posts()
 
+# CSV UPLOAD
 @app.route("/upload_csv", methods=["POST"])
-def upload_csv():
-    logger.info("POST /upload_csv - CSV upload started")
+@requires_auth
+def upload():
+    logger.info("POST /upload_csv")
 
     file = request.files.get("file")
 
@@ -45,43 +94,42 @@ def upload_csv():
         logger.warning("No file uploaded")
         return redirect("/settings")
 
-    try:
-        df = pd.read_csv(file)
-        db = get_db()
-        posts_collection = db["posts"]
+    return upload_csv(file)
 
-        inserted_count = 0
-        skipped_count = 0
+# RE-EVALUATE
+@app.route("/reevaluate/<post_id>")
+@requires_auth
+def reevaluate(post_id):
+    logger.info(f"Re-evaluating post {post_id}")
+    return reevaluate_post(post_id)
 
-        for _, row in df.iterrows():
-            content = row.get("tweet_cleaned", "")
+# BATCH EVALUATE
+@app.route("/evaluate_batch")
+@requires_auth
+def evaluate_batch():
+    size = int(request.args.get("size", 10))
+    return evaluate_batch_posts(size)
 
-            if not content or str(content).strip() == "":
-                skipped_count += 1
-                continue
+# ANALYSIS
+@app.route("/analysis")
+@requires_auth
+def analysis():
+    logger.info("GET /analysis - Analysis page accessed")
 
-            post = {
-                "content": content,
-                "label": row.get("class_label", "unknown"),
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
-            }
+    stats = compute_metrics()
 
-            posts_collection.insert_one(post)
-            inserted_count += 1
+    return render_template("analysis.html", stats=stats)
 
-        logger.info(f"Inserted: {inserted_count}, Skipped: {skipped_count}")
+@app.route("/set_label/<post_id>", methods=["POST"])
+@requires_auth
+def set_label(post_id):
+    return update_label(post_id)
 
-        # 👇 PASS RESULT TO SETTINGS PAGE
-        return redirect(f"/settings?inserted={inserted_count}&skipped={skipped_count}")
-
-    except Exception as e:
-        logger.error(f"CSV upload failed: {str(e)}")
-        return redirect("/settings?error=1")
-
+# -------- RUN --------
 if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
         port=5000,
         debug=True,
-        use_reloader=False  # prevents duplicate logs / weird thread error
+        use_reloader=True
     )
