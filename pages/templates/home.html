@@ -9,7 +9,9 @@
 
 <div style="margin-bottom: 20px;">
     <h4>⚡ Batch Evaluate</h4>
-
+    <a href="/evaluate_batch?size=5" onclick="this.innerText='Running...';">
+        <button>Run 5</button>
+    </a>
     <a href="/evaluate_batch?size=10"><button>Run 10</button></a>
     <a href="/evaluate_batch?size=50"><button>Run 50</button></a>
     <a href="/evaluate_batch?size=100"><button>Run 100</button></a>
@@ -30,65 +32,101 @@
 
     <p>{{ post.content }}</p>
 
-    <!-- GROUND TRUTH SECTION -->
+    <!-- GROUND TRUTH -->
     <div style="margin: 8px 0;">
-
         {% if post.true_label %}
             <span style="font-weight:bold;">
                 🏷 Ground Truth: {{ post.true_label }}
             </span>
-
         {% else %}
-            <!-- ONLY allow labeling for user posts -->
             {% if post.source == "user" %}
                 <form method="POST" action="/set_label/{{ post._id }}" style="display:inline;">
                     <select name="label" required>
                         <option value="">Set label...</option>
-                        <option value="hate_speech">hate peech</option>
-                        <option value="offensive">offensive language</option>
+                        <option value="hate speech">hate speech</option>
+                        <option value="offensive language">offensive language</option>
                         <option value="neither">neither</option>
                     </select>
                     <button type="submit">Save</button>
                 </form>
             {% endif %}
         {% endif %}
+    </div>
+
+    <!-- 🔥 MODEL OUTPUT -->
+    <div class="meta" style="margin-top:10px;">
+
+        {% if post.model_results %}
+
+            <!-- BASE MODELS -->
+            <div style="margin-bottom:8px;">
+                <b>🧠 Base Models</b><br>
+
+                {% for model, result in post.model_results.items() %}
+                    {% if "-ft" not in model %}
+
+                        {% set raw = result.label if result.label else result.get("sentiment") %}
+                        {% set label = raw if raw else "N/A" %}
+                        {% set name = model.split(":")[0] %}
+
+                        <div>• {{ name }} = <b>{{ label }}</b></div>
+
+                    {% endif %}
+                {% endfor %}
+            </div>
+
+            <!-- FINETUNED MODELS -->
+            <div>
+                <b>🔥 Fine-Tuned Models</b><br>
+
+                {% for model, result in post.model_results.items() %}
+                    {% if "-ft" in model %}
+
+                        {% set raw = result.label if result.label else result.get("sentiment") %}
+                        {% set label = raw if raw else "N/A" %}
+
+                        <div>• {{ model }} = <b>{{ label }}</b></div>
+
+                    {% endif %}
+                {% endfor %}
+            </div>
+
+        {% else %}
+            <span>⚠️ Not evaluated</span>
+        {% endif %}
+
+        <div style="margin-top:5px; font-size:12px; opacity:0.7;">
+            {{ post.timestamp }}
+        </div>
 
     </div>
 
-    <!-- MODEL OUTPUT -->
-    <div class="meta">
-        🧠 LLaMA: {{ post.llama_label }} |
-        ⚡ Phi: {{ post.phi_label }} |
-        {{ post.timestamp }}
-    </div>
+    <!-- ✅ CORRECTNESS -->
+    {% if post.true_label and post.model_results %}
+        <div style="font-size: 13px; margin-top: 6px;">
 
-    <!-- correctness indicator -->
-    {% if post.true_label %}
-        <div style="font-size: 13px; margin-top: 5px;">
-            {% if post.llama_label == post.true_label %}
-                <span style="color:green;">✔ LLaMA Correct</span>
-            {% else %}
-                <span style="color:red;">✘ LLaMA Wrong</span>
-            {% endif %}
+            {% for model, result in post.model_results.items() %}
 
-            |
+                {% set raw = result.label if result.label else result.get("sentiment") %}
+                {% set pred = raw if raw else "unknown" %}
+                {% set name = model.split(":")[0] %}
 
-            {% if post.phi_label == post.true_label %}
-                <span style="color:green;">✔ Phi Correct</span>
-            {% else %}
-                <span style="color:red;">✘ Phi Wrong</span>
-            {% endif %}
+                {% if pred == post.true_label %}
+                    <span style="color:green;">✔ {{ name }}</span>
+                {% else %}
+                    <span style="color:red;">✘ {{ name }}</span>
+                {% endif %}
+
+                {% if not loop.last %} | {% endif %}
+
+            {% endfor %}
+
         </div>
     {% endif %}
 
     <!-- ACTIONS -->
     <div style="margin-top: 8px;">
-        {% if post.llama_label == "not_evaluated" %}
-            <a href="/reevaluate/{{ post._id }}">⚡ Evaluate</a>
-        {% else %}
-            <a href="/reevaluate/{{ post._id }}">🔄 Re-evaluate</a>
-        {% endif %}
-
+        <a href="/reevaluate/{{ post._id }}">🔄 Re-evaluate</a>
         <a href="/delete/{{ post._id }}" class="delete">Delete</a>
     </div>
 
