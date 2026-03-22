@@ -1,8 +1,4 @@
-from cProfile import label
-from unittest import result
-
 from flask import render_template, request, redirect
-from requests import post
 from db.mongo import get_db
 from services.moderation import classify_text
 from utils.logger import setup_logger
@@ -12,6 +8,10 @@ import pandas as pd
 
 logger = setup_logger()
 
+
+# =========================
+# HOME
+# =========================
 def home():
     db = get_db()
     posts_collection = db["posts"]
@@ -20,14 +20,11 @@ def home():
     if request.method == "POST":
         content = request.form.get("content")
 
-        result = classify_text(content)
-
         posts_collection.insert_one({
             "content": content,
             "true_label": None,
             "source": "user",
-            "llama_label": "not_evaluated",
-            "phi_label": "not_evaluated",
+            "model_results": None,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
         })
 
@@ -59,20 +56,29 @@ def home():
     )
 
 
+# =========================
+# DELETE SINGLE POST
+# =========================
 def delete_post(post_id):
     db = get_db()
     db["posts"].delete_one({"_id": ObjectId(post_id)})
-    return redirect("/") 
+    logger.info(f"Deleted post {post_id}")
+    return redirect("/")
 
 
+# =========================
+# DELETE ALL POSTS
+# =========================
 def delete_all_posts():
     db = get_db()
     result = db["posts"].delete_many({})
-
     logger.info(f"🔥 Deleted {result.deleted_count} posts")
-
     return redirect("/")
 
+
+# =========================
+# CSV UPLOAD
+# =========================
 def upload_csv(file):
     db = get_db()
     posts_collection = db["posts"]
@@ -90,8 +96,7 @@ def upload_csv(file):
         posts_collection.insert_one({
             "content": content,
             "true_label": row.get("class_label", "unknown"),
-            "llama_label": "not_evaluated",
-            "phi_label": "not_evaluated",
+            "model_results": None,
             "source": "dataset",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
         })
@@ -102,6 +107,10 @@ def upload_csv(file):
 
     return redirect("/")
 
+
+# =========================
+# SINGLE RE-EVALUATE
+# =========================
 def reevaluate_post(post_id):
     db = get_db()
     posts_collection = db["posts"]
@@ -109,30 +118,47 @@ def reevaluate_post(post_id):
     post = posts_collection.find_one({"_id": ObjectId(post_id)})
 
     if not post:
+        logger.warning("Post not found")
+        return redirect("/")
+
+    if not post.get("true_label"):
+        logger.warning("Skipping evaluation - no ground truth")
         return redirect("/")
 
     result = classify_text(post["content"])
 
     posts_collection.update_one(
         {"_id": ObjectId(post_id)},
-        {
-            "$set": {
-                "llama_label": result["llama"],
-                "phi_label": result["phi"]
-            }
-        }
+        {"$set": {"model_results": result}}
     )
 
     logger.info(f"🔄 Re-evaluated post {post_id}")
 
     return redirect("/")
 
+
+# =========================
+# BATCH EVALUATE
+# =========================
 def evaluate_batch_posts(batch_size):
     db = get_db()
     posts = db["posts"]
 
+    # Only evaluate posts that:
+    # - have label
+    # - not evaluated yet
     unevaluated = list(
-        posts.find({"llama_label": "not_evaluated"}).limit(batch_size)
+        posts.find({
+            "$and": [
+                {"true_label": {"$ne": None}},
+                {
+                    "$or": [
+                        {"model_results": None},
+                        {"model_results": {"$exists": False}}
+                    ]
+                }
+            ]
+        }).limit(batch_size)
     )
 
     if not unevaluated:
@@ -146,12 +172,7 @@ def evaluate_batch_posts(batch_size):
 
         posts.update_one(
             {"_id": post["_id"]},
-            {
-                "$set": {
-                    "llama_label": result["llama"],
-                    "phi_label": result["phi"]
-                }
-            }
+            {"$set": {"model_results": result}}
         )
 
         processed += 1
@@ -160,23 +181,31 @@ def evaluate_batch_posts(batch_size):
 
     return redirect("/analysis")
 
+
+# =========================
+# NORMALIZE LABELS
+# =========================
 def normalize(label):
     if not label:
         return "unknown"
 
     label = str(label).lower().strip()
 
-    if label in ["hate speech", "hate_speech"]:
-        return "hate_speech"
+    if "hate" in label:
+        return "hate speech"
 
-    if label in ["offensive language", "offensive_language"]:
-        return "offensive"
+    if "offensive" in label:
+        return "offensive language"
 
-    if label in ["neither", "not"]:
-        return "not"
+    if "neither" in label or "not" in label:
+        return "neither"
 
-    return label
+    return "unknown"
 
+
+# =========================
+# UPDATE LABEL
+# =========================
 def update_label(post_id):
     db = get_db()
     posts = db["posts"]
@@ -184,6 +213,7 @@ def update_label(post_id):
     new_label = request.form.get("label")
 
     if not new_label:
+        logger.warning("No label provided")
         return redirect("/")
 
     posts.update_one(
@@ -191,69 +221,102 @@ def update_label(post_id):
         {"$set": {"true_label": new_label}}
     )
 
-    logger.info(f"Updated label for {post_id} → {new_label}")
+    logger.info(f"Updated label for {post_id} = {new_label}")
 
     return redirect("/")
 
+
+# =========================
+# METRICS
+# =========================
 def compute_metrics():
     db = get_db()
     posts_collection = db["posts"]
 
+    # Get all evaluated posts (dataset + user)
     posts = list(posts_collection.find({
-        "source": "dataset",              # 🔥 ONLY dataset
-        "true_label": {"$ne": None},      # 🔥 must have ground truth
-        "llama_label": {"$ne": "not_evaluated"}
+        "true_label": {"$ne": None},
+        "model_results": {"$ne": None}
     }))
 
-    total = len(posts)
+    labels = ["hate speech", "offensive language", "neither"]
 
-    if total == 0:
+    total_posts = len(posts)
+
+    if total_posts == 0:
         return {
             "total": 0,
-            "llama_acc": 0,
-            "phi_acc": 0,
-            "llama_matrix": {},
-            "phi_matrix": {}
+            "models": [],
+            "accuracy": {},
+            "matrices": {}
         }
-    
 
-    # 🔥 Define classes
-    labels = ["hate_speech", "offensive", "not"]
+    # Get model names dynamically
+    sample = next(
+        (p["model_results"] for p in posts if p.get("model_results")),
+        None
+    )
 
-    # 🔥 Initialize 3x3 matrices
-    llama_matrix = {true: {pred: 0 for pred in labels} for true in labels}
-    phi_matrix = {true: {pred: 0 for pred in labels} for true in labels}
+    if not sample:
+        return {
+            "total": 0,
+            "models": [],
+            "accuracy": {},
+            "matrices": {}
+        }
 
-    llama_correct = 0
-    phi_correct = 0
+    models = [m.replace(":latest", "") for m in sample.keys()]
 
+    # Initialize structures
+    matrices = {}
+    correct_counts = {}
+    model_totals = {}
+
+    for model in models:
+        matrices[model] = {
+            true: {pred: 0 for pred in labels}
+            for true in labels
+        }
+        correct_counts[model] = 0
+        model_totals[model] = 0
+
+    # Compute metrics
     for post in posts:
         true = normalize(post.get("true_label"))
-        llama = normalize(post.get("llama_label"))
-        phi = normalize(post.get("phi_label"))
+        results = post.get("model_results")
 
-        # Skip bad labels
-        if true not in labels:
+        if not results or true not in labels:
             continue
-        if llama not in labels:
-            llama = "not"
-        if phi not in labels:
-            phi = "not"
 
-        # ✅ Accuracy
-        if llama == true:
-            llama_correct += 1
-        if phi == true:
-            phi_correct += 1
+        for raw_model, result in results.items():
+            model = raw_model.replace(":latest", "")
 
-        # ✅ Confusion matrix (multiclass)
-        llama_matrix[true][llama] += 1
-        phi_matrix[true][phi] += 1
+            pred = normalize(result.get("label"))
+
+            if pred not in labels:
+                pred = "neither"
+
+            model_totals[model] += 1
+
+            if pred == true:
+                correct_counts[model] += 1
+
+            matrices[model][true][pred] += 1
+
+    # Accuracy per model
+    accuracy = {}
+    for model in models:
+        if model_totals[model] > 0:
+            accuracy[model] = round(
+                correct_counts[model] / model_totals[model],
+                3
+            )
+        else:
+            accuracy[model] = 0
 
     return {
-        "total": total,
-        "llama_acc": round(llama_correct / total, 3),
-        "phi_acc": round(phi_correct / total, 3),
-        "llama_matrix": llama_matrix,
-        "phi_matrix": phi_matrix
+        "total": total_posts,
+        "models": models,
+        "accuracy": accuracy,
+        "matrices": matrices
     }
