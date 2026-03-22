@@ -1,6 +1,22 @@
+from services.ollama_service import query_model
+
 def classify_text(text):
-    # TEMP — will replace later with ML model
+
+    prompt = f"""
+Classify this text into ONE of the following:
+- hate speech
+- offensive language
+- neither
+
+Text: "{text}"
+
+Return ONLY the label.
+"""
+
+    llama_result = query_model("llama3.1:latest", prompt)
+    phi_result = query_model("phi3:latest", prompt)
+
     return {
-        "label": "non-hate",
-        "confidence": 0.99
+        "llama": llama_result.lower(),
+        "phi": phi_result.lower()
     }
