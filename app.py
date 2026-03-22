@@ -118,7 +118,14 @@ def analysis():
 
     stats = compute_metrics()
 
-    return render_template("analysis.html", stats=stats)
+    # Extract model names dynamically
+    models = stats.get("models", [])
+
+    return render_template(
+        "analysis.html",
+        stats=stats,
+        models=models
+    )
 
 @app.route("/set_label/<post_id>", methods=["POST"])
 @requires_auth
