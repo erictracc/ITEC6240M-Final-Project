@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+
+{% block title %}Analysis{% endblock %}
+
+{% block content %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- DATA -->
+<script id="chart-data" type="application/json">
+{
+    "llama_acc": {{ stats.llama_acc }},
+    "phi_acc": {{ stats.phi_acc }},
+    "llama_matrix": {{ stats.llama_matrix | tojson }},
+    "phi_matrix": {{ stats.phi_matrix | tojson }}
+}
+</script>
+
+<div class="card">
+    <h2>📊 Model Analysis</h2>
+
+    <!-- Batch -->
+    <div style="margin-bottom: 20px;">
+        <h4>⚡ Batch Evaluate</h4>
+        <a href="/evaluate_batch?size=10"><button>Run 10</button></a>
+        <a href="/evaluate_batch?size=50"><button>Run 50</button></a>
+        <a href="/evaluate_batch?size=100"><button>Run 100</button></a>
+    </div>
+
+    <p><b>Total Evaluated:</b> {{ stats.total }}</p>
+
+    <hr>
+
+    <!-- Accuracy -->
+    <h3>🧠 Accuracy</h3>
+    <canvas id="accuracyChart"></canvas>
+
+    <hr>
+
+    <!-- LLaMA -->
+    <h3>📦 LLaMA Analysis</h3>
+    <canvas id="llamaDist"></canvas>
+    <canvas id="llamaHeatmap"></canvas>
+
+    <hr>
+
+    <!-- Phi -->
+    <h3>⚡ Phi Analysis</h3>
+    <canvas id="phiDist"></canvas>
+    <canvas id="phiHeatmap"></canvas>
+
+</div>
+
+<script>
+const data = JSON.parse(document.getElementById('chart-data').textContent);
+const labels = ['hate_speech', 'offensive', 'not'];
+
+/* ===== Accuracy ===== */
+new Chart(document.getElementById('accuracyChart'), {
+    type: 'bar',
+    data: {
+        labels: ['LLaMA', 'Phi'],
+        datasets: [{
+            label: 'Accuracy',
+            data: [data.llama_acc, data.phi_acc],
+            backgroundColor: ['#4CAF50', '#FF9800']
+        }]
+    },
+    options: {
+        plugins: { legend: { display: false } },
+        scales: {
+            y: { beginAtZero: true, max: 1 }
+        }
+    }
+});
+
+/* ===== Distribution Helper ===== */
+function getDistribution(matrix) {
+    let actual = {hate_speech:0, offensive:0, not:0};
+    let predicted = {hate_speech:0, offensive:0, not:0};
+
+    labels.forEach(t => {
+        labels.forEach(p => {
+            const val = matrix[t][p];
+            actual[t] += val;
+            predicted[p] += val;
+        });
+    });
+
+    return {actual, predicted};
+}
+
+/* ===== LLaMA Distribution ===== */
+const llamaDist = getDistribution(data.llama_matrix);
+
+new Chart(document.getElementById('llamaDist'), {
+    type: 'bar',
+    data: {
+        labels: labels,
+        datasets: [
+            {
+                label: 'Actual',
+                data: Object.values(llamaDist.actual),
+                backgroundColor: '#2196F3'
+            },
+            {
+                label: 'Predicted',
+                data: Object.values(llamaDist.predicted),
+                backgroundColor: '#F44336'
+            }
+        ]
+    }
+});
+
+/* ===== Phi Distribution ===== */
+const phiDist = getDistribution(data.phi_matrix);
+
+new Chart(document.getElementById('phiDist'), {
+    type: 'bar',
+    data: {
+        labels: labels,
+        datasets: [
+            {
+                label: 'Actual',
+                data: Object.values(phiDist.actual),
+                backgroundColor: '#2196F3'
+            },
+            {
+                label: 'Predicted',
+                data: Object.values(phiDist.predicted),
+                backgroundColor: '#F44336'
+            }
+        ]
+    }
+});
+
+/* ===== Confusion Matrix Renderer ===== */
+function drawHeatmap(canvasId, matrix, title) {
+    const canvas = document.getElementById(canvasId);
+    const ctx = canvas.getContext('2d');
+
+    const size = labels.length;
+    const cellSize = 80;
+    const padLeft = 100;
+    const padTop = 50;
+
+    canvas.width = padLeft + cellSize * size;
+    canvas.height = padTop + cellSize * size + 40;
+
+    // Title
+    ctx.font = '16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(title, canvas.width / 2, 20);
+
+    for (let i = 0; i < size; i++) {
+        for (let j = 0; j < size; j++) {
+            const val = matrix[labels[i]][labels[j]];
+            const intensity = Math.min(val / 5, 1);
+
+            ctx.fillStyle = `rgba(33, 150, 243, ${intensity})`;
+            ctx.fillRect(
+                padLeft + j * cellSize,
+                padTop + i * cellSize,
+                cellSize,
+                cellSize
+            );
+
+            ctx.fillStyle = 'black';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(
+                val,
+                padLeft + j * cellSize + cellSize/2,
+                padTop + i * cellSize + cellSize/2
+            );
+        }
+    }
+
+    // X labels
+    ctx.textAlign = 'center';
+    labels.forEach((l, j) => {
+        ctx.fillText(
+            l,
+            padLeft + j * cellSize + cellSize/2,
+            padTop + size * cellSize + 15
+        );
+    });
+
+    // Y labels
+    ctx.textAlign = 'right';
+    labels.forEach((l, i) => {
+        ctx.fillText(
+            l,
+            padLeft - 10,
+            padTop + i * cellSize + cellSize/2
+        );
+    });
+
+    // Axis titles
+    ctx.textAlign = 'center';
+    ctx.fillText(
+        'Predicted',
+        padLeft + (size * cellSize)/2,
+        canvas.height - 5
+    );
+
+    ctx.save();
+    ctx.translate(20, padTop + (size * cellSize)/2);
+    ctx.rotate(-Math.PI/2);
+    ctx.fillText('True', 0, 0);
+    ctx.restore();
+}
+
+/* ===== Draw Heatmaps ===== */
+drawHeatmap('llamaHeatmap', data.llama_matrix, 'LLaMA Confusion Matrix');
+drawHeatmap('phiHeatmap', data.phi_matrix, 'Phi Confusion Matrix');
+
+</script>
+
+{% endblock %}
