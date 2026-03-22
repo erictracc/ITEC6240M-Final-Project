@@ -167,15 +167,48 @@ def evaluate_batch_posts(batch_size):
 
     processed = 0
 
+    from pymongo.errors import AutoReconnect
+    import time
+
+    processed = 0
+    total = len(unevaluated)
+
+    def safe_update(posts, post_id, result, retries=3):
+        for attempt in range(retries):
+            try:
+                posts.update_one(
+                    {"_id": post_id},
+                    {"$set": {"model_results": result}}
+                )
+                return True
+            except AutoReconnect:
+                logger.warning(f"[Mongo] Reconnect attempt {attempt+1}")
+                time.sleep(1)
+
+        logger.error(f"[Mongo] Failed update for {post_id}")
+        return False
+
+
     for post in unevaluated:
-        result = classify_text(post["content"])
+        try:
+            result = classify_text(post["content"])
 
-        posts.update_one(
-            {"_id": post["_id"]},
-            {"$set": {"model_results": result}}
-        )
+            success = safe_update(posts, post["_id"], result)
 
-        processed += 1
+            if success:
+                processed += 1
+
+            # PROGRESS LOGGING EVERY 10
+            if processed % 10 == 0:
+                logger.info(f"✅ Progress: {processed}/{total}")
+
+            # optional small delay (helps stability)
+            time.sleep(0.1)
+
+        except Exception as e:
+            logger.error(f"❌ Failed processing post {post['_id']} → {str(e)}")
+
+            processed += 1
 
     logger.info(f"Processed {processed} posts (batch size {batch_size})")
 
