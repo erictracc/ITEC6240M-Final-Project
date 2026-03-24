@@ -1,36 +1,38 @@
 version: "3.9"
 
 services:
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama-lm
+  mongo:
+    image: mongo:latest
+    container_name: mongodb
     restart: unless-stopped
 
     ports:
-      - "11434:11434"  # Ollama API exposed on this port
+      - "27017:27017"  # MongoDB exposed on default port
 
     volumes:
-      - ollama_data:/root/.ollama  # Stores downloaded models (persistent)
+      - mongo_data:/data/db  # Persistent database storage
 
     environment:
-      - OLLAMA_KEEP_ALIVE=24h
+      - MONGO_INITDB_DATABASE=hate_speech_db
 
     # -----------------------------------------
     # AFTER STARTING THE CONTAINER:
     #
     # 1. Enter the container:
-    #    docker exec -it ollama-lm bash
+    #    docker exec -it mongodb bash
     #
-    # 2. Install models used in this project:
-    #    ollama pull llama3.1
-    #    ollama pull phi3
+    # 2. Open Mongo shell:
+    #    mongosh
     #
-    # 3. Verify installation:
-    #    ollama list
+    # 3. Switch to your database:
+    #    use hate_speech_db
     #
-    # These models are used for hate speech classification
-    # in the Flask application.
+    # 4. Verify collections:
+    #    show collections
+    #
+    # This database stores:
+    # - User posts
     # -----------------------------------------
 
 volumes:
-  ollama_data:
+  mongo_data:

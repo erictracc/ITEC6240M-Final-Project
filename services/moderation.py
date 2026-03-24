@@ -15,7 +15,7 @@ MODELS = [
 # =========================
 def build_prompt(text, is_finetuned):
 
-    # 🔥 SAME FORMAT FOR ALL (more stable)
+    # SAME FORMAT FOR ALL
     return f"""
 You are a STRICT classifier.
 
@@ -45,7 +45,7 @@ def extract_label(response):
 
     text = response.strip().lower()
 
-    # 🔥 Handle JSON safely
+    # Handle JSON safely
     if "{" in text:
         try:
             parsed = json.loads(text)
@@ -53,7 +53,7 @@ def extract_label(response):
         except:
             pass
 
-    # 🔥 Hard normalization
+    # Hard normalization
     if "hate" in text:
         return "hate speech"
 
@@ -94,7 +94,7 @@ def classify_text(text):
                 "is_finetuned": "-ft" in model
             }
 
-    # 🔥 PARALLEL EXECUTION (HUGE SPEED BOOST)
+    # PARALLEL EXECUTION
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = [executor.submit(run_model, m) for m in MODELS]
 
